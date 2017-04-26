@@ -1,3 +1,4 @@
+import classnames from 'classnames';
 import Field from '../Field';
 import React, { PropTypes } from 'react';
 import { Fields } from 'FieldTypes';
@@ -52,13 +53,24 @@ module.exports = Field.create({
 		this.setState({ selectedLanguage: languageKey });
 	},
 
-	valueChanged: function (which, event) {
-		const { value = {}, path, onChange } = this.props;
+	valueChanged: function ({ path, value }) {
+		console.log('valueChanged', { path, value });
+
+		const {
+			value: rootValue = {},
+			path: rootPath,
+			defaultLanguage,
+			onChange,
+		} = this.props;
+
+		const pathParts = path.split('.');
+		const language = pathParts.length > 0 ? pathParts[pathParts.length - 1] : defaultLanguage;
+
 		onChange({
-			path,
+			path: rootPath,
 			value: {
-				...value,
-				[which]: event.target.value,
+				...rootValue,
+				[language]: value,
 			},
 		});
 	},
@@ -82,24 +94,40 @@ module.exports = Field.create({
 		);
 	},
 
-	renderSubField () {
-		const { subFieldType: type } = this.props;
-		const { selectedLanguage = 'de' } = this.state;
-		let subFieldType = type.toLowerCase();
+	renderSubField (language) { // TODO render other inputs aswell because it gets send via form
+		const { subFieldTypeName, defaultLanguage, value = {}, path } = this.props;
+		const { selectedLanguage = defaultLanguage } = this.state;
+		const val = value[language];
+
+		let subFieldType = subFieldTypeName.toLowerCase();
 		// const props = assign({}, field);
 		// props.value = this.props.values[field.path];
 		// props.values = this.props.values;
 		// props.onChange = this.handleChange;
 		// props.mode = 'edit';
 
+		console.log('renderSubField', {
+			path: path + '.' + language,
+			value: val,
+			type: subFieldType,
+			values: this.props.values,
+			onChange: this.valueChanged,
+			mode: this.props.mode,
+		});
+
 		return (
-			<div style={{color: 'red'}}>
-				{'subFieldType: ' + subFieldType + ' lang=' + selectedLanguage}
+			<div
+				style={{ color: language === selectedLanguage ? 'red' : 'green' }}
+				key={`subfield-lang-${language}`}
+			>
+				{'subFieldType: ' + subFieldType + ' lang=' + language}
 
 				{React.createElement(Fields[subFieldType], {
-					value: "value",
+					path: path + '.' + language,
+					value: val,
+					type: subFieldType,
 					values: this.props.values,
-					onChange: (...args) => console.log('onChange', args),
+					onChange: this.valueChanged,
 					mode: this.props.mode,
 				})}
 			</div>
@@ -107,9 +135,8 @@ module.exports = Field.create({
 	},
 
 	renderField () {
-		const { value = { de: 'Deutsch', en: 'English', fr: 'Français' }, paths, autoFocus } = this.props;
-		const { selectedLanguage } = this.state;
-		const localizedValue = value[selectedLanguage];
+		const { value = {}, paths, autoFocus, languages, defaultLanguage } = this.props;
+		const { selectedLanguage = defaultLanguage } = this.state;
 
 		console.log({ props: this.props });
 
@@ -117,18 +144,17 @@ module.exports = Field.create({
 			<Grid.Row small="one-half" gutter={10}>
 				<Grid.Col>
 					<Grid.Row>
-						<a onClick={() => this.selectLanguage('de')}>
-							Deutsch
-						</a>
-						<a onClick={() => this.selectLanguage('en')}>
-							English
-						</a>
-						<a onClick={() => this.selectLanguage('fr')}>
-							Français
-						</a>
+						{languages.map(language => (
+							<span key={`lang-${language}`}>
+								<a onClick={() => this.selectLanguage(language)}>
+									{language}
+								</a>
+								&nbsp;
+							</span>
+						))}
 					</Grid.Row>
 					<Grid.Row>
-						{this.renderSubField()}
+						{languages.map(language => this.renderSubField(language))}
 						{/*
 							<FormInput
 							autoFocus={autoFocus}
@@ -145,4 +171,20 @@ module.exports = Field.create({
 			</Grid.Row>
 		);
 	},
+
+	// renderUI () {
+	// 	var wrapperClassName = classnames(
+	// 		'field-type-' + this.props.type,
+	// 		this.props.className,
+	// 		{ 'field-monospace': this.props.monospace }
+	// 	);
+	// 	return (
+	// 		<FormField htmlFor={this.props.path} label={this.props.label} className={wrapperClassName} cropLabel>
+	// 			<div className={'FormField__inner field-size-' + this.props.size}>
+	// 				{this.shouldRenderField() ? this.renderField() : this.renderValue()}
+	// 			</div>
+	// 			{this.renderNote()}
+	// 		</FormField>
+	// 	);
+	// },
 });

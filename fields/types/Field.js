@@ -65,6 +65,7 @@ var Base = module.exports.Base = {
 	},
 	renderField () {
 		const { autoFocus, value, inputProps } = this.props;
+		console.log('renderField', { props: this.props });
 		return (
 			<FormInput {...{
 				...inputProps,

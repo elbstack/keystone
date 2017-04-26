@@ -1,4 +1,5 @@
 var _ = require('lodash');
+var async = require('async');
 var FieldType = require('../Type');
 var fieldTypes = require('../../../lib/fieldTypes');
 var util = require('util');
@@ -11,13 +12,32 @@ var utils = require('keystone-utils');
  */
 function translatable (list, path, options) {
 	this._fixedSize = 'full';
-	this.subFieldType = 'Number'; // options.subFieldType || 'text';
-	this.subFieldOptions = {}; // TODO subFieldOptions
-	// TODO check if subFieldType is translatable. and warn of that nonsense
-	this.defaultLocale = 'en'; // TODO default locale
-	this.locales = ['en', 'de']; // TODO check if default is included
-	// options.default = { de: '', en: '' }; // TODO ...
-	this._properties = ['subFieldType', 'defaultLocale', 'subFieldOptions'];
+	if (!options.subFieldType) {
+		throw new Error('you must specify a subFieldType (at path '
+			+ path + ' in list ' + list.key + ')');
+	} else if (options.subFieldType === fieldTypes.Translatable) {
+		throw new Error('subFieldType is Translatable, this isn\'t allowed');
+	}
+	this.subFieldType = options.subFieldType;
+	this.subFieldTypeName = this.subFieldType.properName;
+	this.subFieldOptions = options.subFieldOptions || {}; // TODO subFieldOptions
+
+	if (!options.defaultLanguage) {
+		throw new Error('you must specify a defaultLanguage (at path '
+			+ path + ' in list ' + list.key + ')');
+	}
+	this.defaultLanguage = options.defaultLanguage;
+
+	if (!options.languages || !Array.isArray(options.languages)) {
+		throw new Error('you must specify languages as an array of supported languages (at path '
+			+ path + ' in list ' + list.key + ')');
+	} else if (options.languages.indexOf(options.defaultLanguage) < 0) {
+		throw new Error('defaultLanguage is not included in languages (at path '
+			+ path + ' in list ' + list.key + ')');
+	}
+	this.languages = options.languages; // TODO add label to be displayed for language
+
+	this._properties = ['subFieldTypeName', 'defaultLanguage', 'languages', 'subFieldOptions'];
 	translatable.super_.call(this, list, path, options);
 }
 translatable.properName = 'Translatable';
@@ -32,20 +52,10 @@ util.inherits(translatable, FieldType);
  * @api public
  */
 translatable.prototype.addToSchema = function (schema) {
-	// var paths = this.paths = {
-	// 	md: this.path + '.md',
-	// 	html: this.path + '.html',
-	// };
-
 	schema.nested[this.path] = true;
 
-	// schema.add({
-	// 	de: { type: String }, // TODO types from subFieldType's addToSchema
-	// 	en: { type: String },
-	// }, this.path + '.');
-
-	this.locales.forEach(function (locale) {
-		this.getFieldType(locale).addToSchema(schema);
+	this.languages.forEach(function (language) {
+		this.getFieldType(language).addToSchema(schema);
 	}, this);
 
 	this.bindUnderscoreMethods();
@@ -65,6 +75,8 @@ translatable.prototype.getSortString = function (options) {
  * Add filters to a query
  */
 translatable.prototype.addFilterToQuery = function (filter) {
+	// TODO delegate to field for default language
+
 	var query = {};
 	// if (filter.mode === 'exactly' && !filter.value) {
 	// 	query[this.paths.first] = query[this.paths.last] = filter.inverted ? { $nin: ['', null] } : { $in: ['', null] };
@@ -96,17 +108,37 @@ translatable.prototype.addFilterToQuery = function (filter) {
  * Formats the field value
  */
 translatable.prototype.format = function (item) {
-	return item.get(this.paths.full); // TODO - find out what this does
+	return 'translatable.prototype.format';
+	// return item.get(this.paths.full); // TODO - find out what this does
 };
 
 /**
  * Get the value from a data object; may be simple or a pair of fields
  */
 translatable.prototype.getInputFromData = function (data) {
+	console.log('translatable.prototype.getInputFromData', { data });
+
+	// translatable.prototype.getInputFromData { data: { title: 'TFEsev', 'text.en': 'eng', 'text.de': 'deu' } }
+
 	// this.getValueFromData throws an error if we pass name: null
-	// if (data[this.path] === null) {
-	// 	return null;
-	// }
+	if (data[this.path] === null) {
+		return null;
+	}
+
+	var input = {};
+
+	this.languages.forEach(language => {
+		console.log('languages.forEach ', { data, language });
+		var ldata = this.getValueFromData(data, '_' + language);
+		if (ldata === undefined) ldata = this.getValueFromData(data, '.' + language);
+		// TODO maybe use get value from data from (text) field? look what it does..
+		if (ldata !== undefined) {
+			input[language] = ldata;
+		} else {
+			console.log("undefined for lang", language);
+		}
+	});
+
 	// var first = this.getValueFromData(data, '_first');
 	// if (first === undefined) first = this.getValueFromData(data, '.first');
 	// var last = this.getValueFromData(data, '_last');
@@ -119,10 +151,9 @@ translatable.prototype.getInputFromData = function (data) {
 	// }
 	// return this.getValueFromData(data) || this.getValueFromData(data, '.full');
 
-	return {
-		de: 'Deutschland',
-		en: 'England',
-	};
+	console.log('input: ', input);
+
+	return input;
 };
 
 /**
@@ -130,20 +161,17 @@ translatable.prototype.getInputFromData = function (data) {
  */
 translatable.prototype.validateInput = function (data, callback) {
 	let inputFromData = this.getInputFromData(data);
-	// gives {de: 'yxy', en: 'xyx'}
 	console.log('translatable.prototype.validateInput', { data, inputFromData });
 
-	var value = this.getInputFromData(data);
-	var result = value === undefined
-		|| value === null
-		|| typeof value === 'string'
-		|| (typeof value === 'object' && (
-			typeof value.first === 'string'
-			|| value.first === null
-			|| typeof value.last === 'string'
-			|| value.last === null)
-		);
-	utils.defer(callback, true/*result*/);
+	async.every(Object.keys(inputFromData), function (language, callback) {
+		console.log('every inputFromData', { inputFromData, language });
+		this.getFieldType(language).validateInput(data, function (result) {
+			callback(null, result);
+		});
+	}.bind(this), function (err, result) {
+		console.log('async every callback', { err, result });
+		callback(result);
+	});
 };
 
 /**
@@ -151,6 +179,8 @@ translatable.prototype.validateInput = function (data, callback) {
  */
 translatable.prototype.validateRequiredInput = function (item, data, callback) {
 	console.log('translatable.prototype.validateRequiredInput', {item, data, callback});
+
+	// TODO implement
 
 	var value = this.getInputFromData(data);
 	var result;
@@ -201,6 +231,7 @@ translatable.prototype.inputIsValid = function (data, required, item) {
  * @api public
  */
 translatable.prototype.isModified = function (item) {
+	console.log('translatable.prototype.isModified', { item });
 	return item.isModified(this.paths.first) || item.isModified(this.paths.last);
 };
 
@@ -210,25 +241,23 @@ translatable.prototype.isModified = function (item) {
  * @api public
  */
 translatable.prototype.updateItem = function (item, data, callback) {
-	var paths = this.paths;
-	var value = this.getInputFromData(data);
-	if (typeof value === 'string' || value === null) {
-		item.set(paths.full, value);
-	} else if (typeof value === 'object') {
-		if (typeof value.first === 'string' || value.first === null) {
-			item.set(paths.first, value.first);
-		}
-		if (typeof value.last === 'string' || value.last === null) {
-			item.set(paths.last, value.last);
-		}
-	}
-	process.nextTick(callback);
+	console.log('translatable.prototype.updateItem', { item, data });
+
+	let inputFromData = this.getInputFromData(data); // TODO catch empty cases ?
+
+	async.every(Object.keys(inputFromData), function (language, callback) {
+		console.log('every inputFromData 2', { inputFromData, language });
+		this.getFieldType(language).updateItem(item, data, callback);
+	}.bind(this), function (result) {
+		console.log('async every callback 2', { result });
+		callback(result);
+	});
 };
 
 /* utilities specific to translatable field */
-translatable.prototype.getFieldType = function (locale) {
-	var path = this.path + '.' + locale;
-	return new fieldTypes[this.subFieldType](this.list, path, this.subFieldOptions);
+translatable.prototype.getFieldType = function (language) {
+	var path = this.path + '.' + language;
+	return new this.subFieldType(this.list, path, this.subFieldOptions);
 };
 
 

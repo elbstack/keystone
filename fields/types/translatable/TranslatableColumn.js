@@ -16,6 +16,8 @@ var TranslatableColumn = React.createClass({
 		// return value.first + ' ' + value.last;
 	},
 	render () {
+		console.log('TranslatableColumn', { props: this.props });
+
 		return (
 			<ItemsTableCell>
 				<ItemsTableValue to={this.props.linkTo} padded interior field={this.props.col.type}>
