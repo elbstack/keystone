@@ -165,21 +165,12 @@ translatable.prototype.validateRequiredInput = function (item, data, callback) {
  * Deprecated
  */
 translatable.prototype.inputIsValid = function (data, required, item) {
-	console.log('translatable.prototype.inputIsValid', {data, required, item});
-	return true;
+	console.log('translatable.prototype.inputIsValid', { data, required, item });
 
-	// TODO implement this using delegation aswell..
-	// Input is valid if none was provided, but the item has data
-	if (!(this.path in data || this.paths.first in data || this.paths.last in data || this.paths.full in data) && item && item.get(this.paths.full)) return true;
-	// Input is valid if the field is not required
-	if (!required) return true;
-	// Otherwise check for valid strings in the provided data,
-	// which may be nested or use flattened paths.
-	if (_.isObject(data[this.path])) {
-		return (data[this.path].full || data[this.path].first || data[this.path].last) ? true : false;
-	} else {
-		return (data[this.paths.full] || data[this.paths.first] || data[this.paths.last]) ? true : false;
-	}
+	// TODO check if this works
+	return this.languages.every(function (language) {
+		return this.getSubField(language).inputIsValid(data, required, item);
+	}.bind(this));
 };
 
 /**
