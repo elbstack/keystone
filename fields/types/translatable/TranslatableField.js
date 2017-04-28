@@ -5,6 +5,7 @@ import { Fields } from 'FieldTypes';
 import {
 	FormInput,
 	Grid,
+	SegmentedControl,
 } from '../../../admin/client/App/elemental';
 
 /* how to render any field?
@@ -53,6 +54,11 @@ module.exports = Field.create({
 		this.setState({ selectedLanguage: languageKey });
 	},
 
+	getLanguageLabel: function (language) {
+		const { languageLabels = {} } = this.props;
+		return languageLabels[language] || language;
+	},
+
 	valueChanged: function ({ path, value }) {
 		console.log('valueChanged', { path, value });
 
@@ -75,116 +81,86 @@ module.exports = Field.create({
 		});
 	},
 	renderValue () {
-		const inputStyle = { width: '100%' };
-		const { value = {} } = this.props;
-
-		return (
-			<Grid.Row small="one-half" gutter={10}>
-				<Grid.Col>
-					<FormInput noedit style={inputStyle}>
-						{value.de}
-					</FormInput>
-				</Grid.Col>
-				<Grid.Col>
-					<FormInput noedit style={inputStyle}>
-						{value.en}
-					</FormInput>
-				</Grid.Col>
-			</Grid.Row>
-		);
+		return this.renderField(); // render the same as if with editing enabled
 	},
 
-	renderSubField (language) { // TODO render other inputs aswell because it gets send via form
-		const { subFieldTypeName, defaultLanguage, value = {}, path } = this.props;
+	renderSubField (language) {
+		const { subFieldTypeName, subFieldProps, defaultLanguage, value = {}, path } = this.props;
 		const { selectedLanguage = defaultLanguage } = this.state;
-		const val = value[language];
+		// const val = value[language];
 
 		let subFieldType = subFieldTypeName.toLowerCase();
-		// const props = assign({}, field);
-		// props.value = this.props.values[field.path];
-		// props.values = this.props.values;
-		// props.onChange = this.handleChange;
-		// props.mode = 'edit';
 
-		console.log('renderSubField', {
-			path: path + '.' + language,
-			value: val,
-			type: subFieldType,
-			values: this.props.values,
-			onChange: this.valueChanged,
-			mode: this.props.mode,
-		});
-
-		return (
-			<div
-				style={{ color: language === selectedLanguage ? 'red' : 'green' }}
-				key={`subfield-lang-${language}`}
-			>
-				{'subFieldType: ' + subFieldType + ' lang=' + language}
-
-				{React.createElement(Fields[subFieldType], {
+		/**
+		 * {
 					path: path + '.' + language,
-					value: val,
 					type: subFieldType,
+					value: val,
 					values: this.props.values,
 					onChange: this.valueChanged,
 					mode: this.props.mode,
-				})}
+					noedit: this.props.noedit,
+				}
+		 */
+
+		const hiddenStyle = { // form inputs which have display:none don\'t get submitted in old browsers
+			visibility: 'hidden',
+			position: 'absolute',
+		};
+
+		const props = Object.assign(
+			{},
+			subFieldProps[language],
+			{
+				value: value[language],
+				values: this.props.values,
+				onChange: this.props.onChange, // this.valueChanged,
+				mode: this.props.mode,
+				noedit: this.props.noedit,
+			});
+		delete props.label;
+
+		// if (subFieldType !== 'text') {
+		// 	return 'psscht';
+		// }
+
+		return (
+			<div
+				style={language !== selectedLanguage ? hiddenStyle : {}}
+				key={`subfield-lang-${language}`}
+			>
+				{React.createElement(Fields[subFieldType], props)}
 			</div>
 		);
 	},
 
 	renderField () {
-		const { value = {}, paths, autoFocus, languages, defaultLanguage } = this.props;
+		const {
+			value = {},
+			paths,
+			autoFocus,
+			languages,
+			defaultLanguage,
+		} = this.props;
 		const { selectedLanguage = defaultLanguage } = this.state;
 
 		console.log({ props: this.props });
 
 		return (
-			<Grid.Row small="one-half" gutter={10}>
-				<Grid.Col>
-					<Grid.Row>
-						{languages.map(language => (
-							<span key={`lang-${language}`}>
-								<a onClick={() => this.selectLanguage(language)}>
-									{language}
-								</a>
-								&nbsp;
-							</span>
-						))}
-					</Grid.Row>
-					<Grid.Row>
-						{languages.map(language => this.renderSubField(language))}
-						{/*
-							<FormInput
-							autoFocus={autoFocus}
-							autoComplete="off"
-							name="someName"
-							placeholder={'Value for ' + selectedLanguage}
-							value={localizedValue}
-						/>
-							onChange={this.changeFirst}
-							name={this.getInputName(paths.en)}
-						 */}
-					</Grid.Row>
-				</Grid.Col>
-			</Grid.Row>
+			<div>
+				<SegmentedControl
+					equalWidthSegments
+					onChange={(val) => this.selectLanguage(val)}
+					color="default"
+					inline
+					options={languages.map(language => ({
+						value: language,
+						label: this.getLanguageLabel(language),
+					}))}
+					value={selectedLanguage}
+				/>
+				{languages.map(language => this.renderSubField(language))}
+			</div>
 		);
 	},
-
-	// renderUI () {
-	// 	var wrapperClassName = classnames(
-	// 		'field-type-' + this.props.type,
-	// 		this.props.className,
-	// 		{ 'field-monospace': this.props.monospace }
-	// 	);
-	// 	return (
-	// 		<FormField htmlFor={this.props.path} label={this.props.label} className={wrapperClassName} cropLabel>
-	// 			<div className={'FormField__inner field-size-' + this.props.size}>
-	// 				{this.shouldRenderField() ? this.renderField() : this.renderValue()}
-	// 			</div>
-	// 			{this.renderNote()}
-	// 		</FormField>
-	// 	);
-	// },
 });

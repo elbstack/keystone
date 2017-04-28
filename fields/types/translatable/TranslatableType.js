@@ -37,7 +37,22 @@ function translatable (list, path, options) {
 	}
 	this.languages = options.languages; // TODO add label to be displayed for language
 
-	this._properties = ['subFieldTypeName', 'defaultLanguage', 'languages', 'subFieldOptions'];
+	this.languageLabels = options.languageLabels || {};
+
+	// init sub field
+	this.subFields = {};
+	this.languages.forEach(function (language) {
+		var subPath = path + '.' + language;
+		this.subFields[language] = new this.subFieldType(list, subPath, this.subFieldOptions);
+	}, this);
+
+	this._properties = [
+		'subFieldTypeName',
+		'defaultLanguage',
+		'languages',
+		'languageLabels',
+		'subFieldOptions',
+	];
 	translatable.super_.call(this, list, path, options);
 }
 translatable.properName = 'Translatable';
@@ -55,7 +70,7 @@ translatable.prototype.addToSchema = function (schema) {
 	schema.nested[this.path] = true;
 
 	this.languages.forEach(function (language) {
-		this.getFieldType(language).addToSchema(schema);
+		this.getSubField(language).addToSchema(schema);
 	}, this);
 
 	this.bindUnderscoreMethods();
@@ -113,59 +128,13 @@ translatable.prototype.format = function (item) {
 };
 
 /**
- * Get the value from a data object; may be simple or a pair of fields
- */
-translatable.prototype.getInputFromData = function (data) {
-	console.log('translatable.prototype.getInputFromData', { data });
-
-	// translatable.prototype.getInputFromData { data: { title: 'TFEsev', 'text.en': 'eng', 'text.de': 'deu' } }
-
-	// this.getValueFromData throws an error if we pass name: null
-	if (data[this.path] === null) {
-		return null;
-	}
-
-	var input = {};
-
-	this.languages.forEach(language => {
-		console.log('languages.forEach ', { data, language });
-		var ldata = this.getValueFromData(data, '_' + language);
-		if (ldata === undefined) ldata = this.getValueFromData(data, '.' + language);
-		// TODO maybe use get value from data from (text) field? look what it does..
-		if (ldata !== undefined) {
-			input[language] = ldata;
-		} else {
-			console.log("undefined for lang", language);
-		}
-	});
-
-	// var first = this.getValueFromData(data, '_first');
-	// if (first === undefined) first = this.getValueFromData(data, '.first');
-	// var last = this.getValueFromData(data, '_last');
-	// if (last === undefined) last = this.getValueFromData(data, '.last');
-	// if (first !== undefined || last !== undefined) {
-	// 	return {
-	// 		first: first,
-	// 		last: last,
-	// 	};
-	// }
-	// return this.getValueFromData(data) || this.getValueFromData(data, '.full');
-
-	console.log('input: ', input);
-
-	return input;
-};
-
-/**
  * Validates that a value for this field has been provided in a data object
  */
 translatable.prototype.validateInput = function (data, callback) {
-	let inputFromData = this.getInputFromData(data);
-	console.log('translatable.prototype.validateInput', { data, inputFromData });
+	console.log('translatable.prototype.validateInput', { data });
 
-	async.every(Object.keys(inputFromData), function (language, callback) {
-		console.log('every inputFromData', { inputFromData, language });
-		this.getFieldType(language).validateInput(data, function (result) {
+	async.every(this.languages, function (language, callback) {
+		this.getSubField(language).validateInput(data, function (result) {
 			callback(null, result);
 		});
 	}.bind(this), function (err, result) {
@@ -178,29 +147,16 @@ translatable.prototype.validateInput = function (data, callback) {
  * Validates that input has been provided
  */
 translatable.prototype.validateRequiredInput = function (item, data, callback) {
-	console.log('translatable.prototype.validateRequiredInput', {item, data, callback});
+	console.log('translatable.prototype.validateRequiredInput', { item, data });
 
-	// TODO implement
-
-	var value = this.getInputFromData(data);
-	var result;
-	if (value === null) {
-		result = false;
-	} else {
-		result = (
-			typeof value === 'string' && value.length
-			|| typeof value === 'object' && (
-				typeof value.first === 'string' && value.first.length
-				|| typeof value.last === 'string' && value.last.length)
-			|| (item.get(this.paths.full)
-				|| item.get(this.paths.first)
-				|| item.get(this.paths.last)) && (
-					value === undefined
-					|| (value.first === undefined
-						&& value.last === undefined))
-			) ? true : false;
-	}
-	utils.defer(callback, true/*result*/);
+	async.every(this.languages, function (language, callback) {
+		this.getSubField(language).validateRequiredInput(item, data, function (result) {
+			callback(null, result);
+		});
+	}.bind(this), function (err, result) {
+		console.log('async every callback', { err, result });
+		callback(result);
+	});
 };
 
 /**
@@ -212,6 +168,7 @@ translatable.prototype.inputIsValid = function (data, required, item) {
 	console.log('translatable.prototype.inputIsValid', {data, required, item});
 	return true;
 
+	// TODO implement this using delegation aswell..
 	// Input is valid if none was provided, but the item has data
 	if (!(this.path in data || this.paths.first in data || this.paths.last in data || this.paths.full in data) && item && item.get(this.paths.full)) return true;
 	// Input is valid if the field is not required
@@ -231,8 +188,12 @@ translatable.prototype.inputIsValid = function (data, required, item) {
  * @api public
  */
 translatable.prototype.isModified = function (item) {
+	// TODO check if this works
 	console.log('translatable.prototype.isModified', { item });
-	return item.isModified(this.paths.first) || item.isModified(this.paths.last);
+
+	return this.languages.every(function (language) {
+		return this.getSubField(language).isModified(item);
+	}.bind(this));
 };
 
 /**
@@ -243,21 +204,31 @@ translatable.prototype.isModified = function (item) {
 translatable.prototype.updateItem = function (item, data, callback) {
 	console.log('translatable.prototype.updateItem', { item, data });
 
-	let inputFromData = this.getInputFromData(data); // TODO catch empty cases ?
-
-	async.every(Object.keys(inputFromData), function (language, callback) {
-		console.log('every inputFromData 2', { inputFromData, language });
-		this.getFieldType(language).updateItem(item, data, callback);
+	async.every(this.languages, function (language, callback) {
+		this.getSubField(language).updateItem(item, data, callback);
 	}.bind(this), function (result) {
-		console.log('async every callback 2', { result });
 		callback(result);
 	});
 };
 
+/**
+ * Get client-side properties to pass to react field.
+ */
+translatable.prototype.getProperties = function () {
+	const subFieldProps = {};
+
+	this.languages.forEach(function (language) {
+		subFieldProps[language] = this.getSubField(language).getOptions();
+	}, this);
+
+	return {
+		subFieldProps,
+	};
+};
+
 /* utilities specific to translatable field */
-translatable.prototype.getFieldType = function (language) {
-	var path = this.path + '.' + language;
-	return new this.subFieldType(this.list, path, this.subFieldOptions);
+translatable.prototype.getSubField = function (language) {
+	return this.subFields[language];
 };
 
 
