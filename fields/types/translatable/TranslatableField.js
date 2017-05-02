@@ -35,7 +35,7 @@ getFieldProps (field) {
 */
 
 module.exports = Field.create({
-	displayTranslatable: 'TranslatableField',
+	displayName: 'TranslatableField',
 	statics: {
 		type: 'Translatable',
 		getDefaultValue: () => ({
@@ -60,7 +60,7 @@ module.exports = Field.create({
 	},
 
 	valueChanged: function ({ path, value }) {
-		console.log('valueChanged', { path, value });
+		console.log('valueChanged', { path, value, props: this.props });
 
 		const {
 			value: rootValue = {},
@@ -69,8 +69,9 @@ module.exports = Field.create({
 			onChange,
 		} = this.props;
 
-		const pathParts = path.split('.');
-		const language = pathParts.length > 0 ? pathParts[pathParts.length - 1] : defaultLanguage;
+		const subPath = path.replace(rootPath + '.', '');
+		const pathParts = subPath.split('.');
+		const language = pathParts.length > 0 ? pathParts[0] : defaultLanguage;
 
 		onChange({
 			path: rootPath,
@@ -103,7 +104,7 @@ module.exports = Field.create({
 				}
 		 */
 
-		const hiddenStyle = { // form inputs which have display:none don\'t get submitted in old browsers
+		const hiddenStyle = { // form inputs which have display:none don't get submitted in old browsers
 			visibility: 'hidden',
 			position: 'absolute',
 		};
@@ -114,7 +115,7 @@ module.exports = Field.create({
 			{
 				value: value[language],
 				values: this.props.values,
-				onChange: this.props.onChange, // this.valueChanged,
+				onChange: this.valueChanged,
 				mode: this.props.mode,
 				noedit: this.props.noedit,
 			});
